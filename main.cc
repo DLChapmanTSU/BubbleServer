@@ -85,6 +85,7 @@ public:
     void Push(const T& i){
         std::unique_lock<std::mutex> lock(m_mutex);
         m_list.push_back(i);
+        std::cout << m_list.size() << std::endl;
     }
 
     List() = default;
@@ -117,7 +118,7 @@ void Reciever::ReceiverLoop(){
             return;
         }
         else{
-            std::cout << "Recieved " << buffer << std::endl;
+            std::cout << "Reciever Loop Recieved " << buffer << std::endl;
         }
 
         r_queue.Push(std::string(buffer));
@@ -138,7 +139,7 @@ Accepter::Accepter(List<std::shared_ptr<sf::TcpSocket>>& s, Queue<std::string>& 
 
 void Accepter::operator()(){
     sf::TcpListener listener;
-    if (listener.listen(555) != sf::Socket::Done){
+    if (listener.listen(55561) != sf::Socket::Done){
         std::cout << "FATAL ACCEPTER ERROR" << std::endl;
         return;
     }
@@ -150,6 +151,7 @@ void Accepter::operator()(){
             return;
         }
         else{
+            std::cout << "Connection accepted" << std::endl;
             a_socket.Push(socket);
             std::shared_ptr<Reciever> r = std::make_shared<Reciever>(socket, a_queue);
             std::thread(&Reciever::ReceiverLoop, r).detach();
@@ -179,13 +181,13 @@ void Accepter::operator()(){
 
 int main(int argc, const char* argv[])
 {
-    std::cout << "I am a server UwU" << std::endl;
+    std::cout << "I am a server" << std::endl;
     Queue<std::string> queue;
     List<std::shared_ptr<sf::TcpSocket>> sockets;
-    Accepter a(sockets, queue);
+    //Accepter a(sockets, queue);
     std::thread(Accepter(sockets, queue)).detach();
     //Setup a listener
-    sf::CircleShape c(4);
+    //sf::CircleShape c(4);
     //c.getLocalBounds();
 
     while (true){
@@ -196,10 +198,13 @@ int main(int argc, const char* argv[])
                 std::cerr << "Failed to send data to client" << std::endl;
                 return 1;
             }
+            else{
+                std::cout << "Sent: " << next << std::endl;
+            }
             return 0;
         };
 
-        
+        sockets.ForEach(send);
     }
 
     return 0;
