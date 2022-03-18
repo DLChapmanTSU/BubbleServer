@@ -194,7 +194,14 @@ int main(int argc, const char* argv[])
         std::string next = queue.Pop();
         std::cout << "Recieved: " << next << std::endl;
         auto send = [&] (std::shared_ptr<sf::TcpSocket> socket){
-            if (socket->send(next.c_str(), next.size() + 1) != sf::Socket::Done){
+            //if (socket->connect("152.105.67.105", 55562)){
+            //    std::cout << "Connected to client" << std::endl;
+            //}
+
+            sf::TcpSocket connector;
+            connector.connect("152.105.67.105", 55562);
+            
+            if (connector.send(next.c_str(), next.size() + 1) != sf::Socket::Done){
                 std::cerr << "Failed to send data to client" << std::endl;
                 return 1;
             }
