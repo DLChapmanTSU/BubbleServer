@@ -28,6 +28,12 @@
 #define M_PI 3.14159265359f
 #define PORT 555
 
+sf::IpAddress _p1Address;
+sf::IpAddress _p2Address;
+unsigned short _p1Port;
+unsigned short _p2Port;
+sf::TcpSocket _connector;
+
 class Reciever;
 class Accepter;
 //class Queue;
@@ -152,9 +158,14 @@ void Accepter::operator()(){
         }
         else{
             std::cout << "Connection accepted" << std::endl;
+            _p1Address = socket->getRemoteAddress();
+            _p1Port = socket->getRemotePort();
+            std::cout << _p1Address << std::endl;
+            std::cout << _p1Port << std::endl;
             a_socket.Push(socket);
             std::shared_ptr<Reciever> r = std::make_shared<Reciever>(socket, a_queue);
             std::thread(&Reciever::ReceiverLoop, r).detach();
+            _connector.connect(_p1Address, 55562);
         }
     }
 }
@@ -190,6 +201,46 @@ int main(int argc, const char* argv[])
     //sf::CircleShape c(4);
     //c.getLocalBounds();
 
+    sf::UdpSocket socket;
+    sf::UdpSocket senderSocket;
+
+// bind the socket to a port
+    if (socket.bind(55571) != sf::Socket::Done)
+    {
+        return 1;
+    }
+
+    if (senderSocket.bind(55573) != sf::Socket::Done)
+    {
+        return 1;
+    }
+
+    char data[100];
+    size_t received;
+    sf::IpAddress remoteIP;
+    unsigned short remotePort;
+
+    if (socket.receive(data, 100, received, remoteIP, remotePort) != sf::Socket::Done){
+        std::cout << "Failed to recieve" << std::endl;
+        return 1;
+    }
+    else{
+        std::cout << "Recieved: " << data << " from broadcast" << std::endl;
+        //return 1;
+    }
+
+    char newData[100] = "Hello ther client. Here are the details of me";
+
+    if (senderSocket.send(newData, 100, remoteIP, 55572) != sf::Socket::Done){
+        std::cout << "Could not broadcast" << std::endl;
+        return 1;
+    }
+    else{
+        std::cout << "Sent" << std::endl;
+    }
+
+    _p1Address = remoteIP;
+
     while (true){
         std::string next = queue.Pop();
         std::cout << "Recieved: " << next << std::endl;
@@ -198,10 +249,9 @@ int main(int argc, const char* argv[])
             //    std::cout << "Connected to client" << std::endl;
             //}
 
-            sf::TcpSocket connector;
-            connector.connect("152.105.67.105", 55562);
             
-            if (connector.send(next.c_str(), next.size() + 1) != sf::Socket::Done){
+            
+            if (_connector.send(next.c_str(), next.size() + 1) != sf::Socket::Done){
                 std::cerr << "Failed to send data to client" << std::endl;
                 return 1;
             }
