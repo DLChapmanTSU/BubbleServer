@@ -1,6 +1,5 @@
 #include <SFML/Graphics.hpp>
 #include <SFML/Network.hpp>
-//#include <TcpSocket.hpp>
 
 #include <cmath>
 #include <ctime>
@@ -33,6 +32,7 @@ sf::IpAddress _p2Address;
 unsigned short _p1Port;
 unsigned short _p2Port;
 sf::TcpSocket _connector;
+sf::TcpSocket _connector2;
 
 class Reciever;
 class Accepter;
@@ -115,11 +115,17 @@ Reciever::Reciever(std::shared_ptr<sf::TcpSocket>& s, Queue<std::string>& q) : r
 
 void Reciever::ReceiverLoop(){
     char buffer[256];
+    sf::Packet packet;
+    std::string name;
+    int points;
+    uint8_t input;
+    std::string message;
+
     while (true){
         std::memset(buffer, 0, 256);
         size_t recieved;
 
-        if (r_socket->receive(buffer, 256, recieved) != sf::Socket::Done){
+        if (r_socket->receive(packet) != sf::Socket::Done){
             std::cout << "FATAL RECIEVER ERROR" << std::endl;
             return;
         }
@@ -127,7 +133,11 @@ void Reciever::ReceiverLoop(){
             std::cout << "Reciever Loop Recieved " << buffer << std::endl;
         }
 
-        r_queue.Push(std::string(buffer));
+        if (packet >> name >> points >> input >> message){
+            std::cout << "Reciever Loop Recieved:\n" << name << "\n" << points << "\n" << input << "\n" << message << std::endl;
+        }
+
+        r_queue.Push(std::string(message));
     }
 }
 
@@ -158,14 +168,28 @@ void Accepter::operator()(){
         }
         else{
             std::cout << "Connection accepted" << std::endl;
-            _p1Address = socket->getRemoteAddress();
-            _p1Port = socket->getRemotePort();
-            std::cout << _p1Address << std::endl;
-            std::cout << _p1Port << std::endl;
-            a_socket.Push(socket);
-            std::shared_ptr<Reciever> r = std::make_shared<Reciever>(socket, a_queue);
-            std::thread(&Reciever::ReceiverLoop, r).detach();
-            _connector.connect(_p1Address, 55562);
+            if (_connector.getRemoteAddress() == sf::IpAddress::None){
+                std::cout << "Player 1 Connected" << std::endl;
+                _p1Address = socket->getRemoteAddress();
+                _p1Port = socket->getRemotePort();
+                std::cout << _p1Address << std::endl;
+                std::cout << _p1Port << std::endl;
+                a_socket.Push(socket);
+                std::shared_ptr<Reciever> r = std::make_shared<Reciever>(socket, a_queue);
+                std::thread(&Reciever::ReceiverLoop, r).detach();
+                _connector.connect(_p1Address, 55562);
+            }
+            else if (_connector2.getRemoteAddress() == sf::IpAddress::None){
+                std::cout << "Player 2 Connected" << std::endl;
+                _p2Address = socket->getRemoteAddress();
+                _p2Port = socket->getRemotePort();
+                std::cout << _p2Address << std::endl;
+                std::cout << _p2Port << std::endl;
+                a_socket.Push(socket);
+                std::shared_ptr<Reciever> r = std::make_shared<Reciever>(socket, a_queue);
+                std::thread(&Reciever::ReceiverLoop, r).detach();
+                _connector2.connect(_p2Address, 55562);
+            }
         }
     }
 }
@@ -190,6 +214,68 @@ void Accepter::operator()(){
 //    }
 //}
 
+struct PlayerData{
+    std::string p_name;
+    int p_points;
+    uint8_t p_input;
+    std::string p_message;
+};
+
+sf::Packet& operator >>(sf::Packet& packet, PlayerData& player)
+{
+    return packet >> player.p_name >> player.p_points >> player.p_input >> player.p_message;
+}
+
+sf::Packet& operator <<(sf::Packet& packet, const PlayerData& player)
+{
+    return packet << player.p_name << player.p_points << player.p_input << player.p_message;
+}
+
+sf::IpAddress HandleUDPBroadcast(){
+    sf::UdpSocket socket;
+    sf::UdpSocket senderSocket;
+
+    // bind the socket to a port
+    if (socket.bind(55571) != sf::Socket::Done)
+    {
+        return sf::IpAddress::None;
+    }
+
+    if (senderSocket.bind(55573) != sf::Socket::Done)
+    {
+        return sf::IpAddress::None;
+    }
+
+    char data[100];
+    size_t received;
+    sf::IpAddress remoteIP;
+    unsigned short remotePort;
+
+    if (socket.receive(data, 100, received, remoteIP, remotePort) != sf::Socket::Done){
+        std::cout << "Failed to recieve" << std::endl;
+        return sf::IpAddress::None;
+    }
+    else{
+        std::cout << "Recieved: " << data << " from broadcast" << std::endl;
+        //return 1;
+    }
+
+    char newData[100] = "Hello ther client. Here are the details of me";
+
+    if (senderSocket.send(newData, 100, remoteIP, 55572) != sf::Socket::Done){
+        std::cout << "Could not broadcast" << std::endl;
+        return sf::IpAddress::None;
+    }
+    else{
+        std::cout << "Sent" << std::endl;
+    }
+
+    //socket.close();
+    //senderSocket.close();
+
+    return remoteIP;
+}
+
 int main(int argc, const char* argv[])
 {
     std::cout << "I am a server" << std::endl;
@@ -201,45 +287,10 @@ int main(int argc, const char* argv[])
     //sf::CircleShape c(4);
     //c.getLocalBounds();
 
-    sf::UdpSocket socket;
-    sf::UdpSocket senderSocket;
+    
 
-// bind the socket to a port
-    if (socket.bind(55571) != sf::Socket::Done)
-    {
-        return 1;
-    }
-
-    if (senderSocket.bind(55573) != sf::Socket::Done)
-    {
-        return 1;
-    }
-
-    char data[100];
-    size_t received;
-    sf::IpAddress remoteIP;
-    unsigned short remotePort;
-
-    if (socket.receive(data, 100, received, remoteIP, remotePort) != sf::Socket::Done){
-        std::cout << "Failed to recieve" << std::endl;
-        return 1;
-    }
-    else{
-        std::cout << "Recieved: " << data << " from broadcast" << std::endl;
-        //return 1;
-    }
-
-    char newData[100] = "Hello ther client. Here are the details of me";
-
-    if (senderSocket.send(newData, 100, remoteIP, 55572) != sf::Socket::Done){
-        std::cout << "Could not broadcast" << std::endl;
-        return 1;
-    }
-    else{
-        std::cout << "Sent" << std::endl;
-    }
-
-    _p1Address = remoteIP;
+    _p1Address = HandleUDPBroadcast();
+    _p2Address = HandleUDPBroadcast();
 
     while (true){
         std::string next = queue.Pop();
@@ -252,6 +303,14 @@ int main(int argc, const char* argv[])
             
             
             if (_connector.send(next.c_str(), next.size() + 1) != sf::Socket::Done){
+                std::cerr << "Failed to send data to client" << std::endl;
+                return 1;
+            }
+            else{
+                std::cout << "Sent: " << next << std::endl;
+            }
+
+            if (_connector2.send(next.c_str(), next.size() + 1) != sf::Socket::Done){
                 std::cerr << "Failed to send data to client" << std::endl;
                 return 1;
             }
