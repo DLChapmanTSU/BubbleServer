@@ -58,6 +58,8 @@
         "random": "cpp",
         "set": "cpp",
         "string": "cpp",
-        "bit": "cpp"
+        "bit": "cpp",
+        "condition_variable": "cpp",
+        "mutex": "cpp"
     }
 }
