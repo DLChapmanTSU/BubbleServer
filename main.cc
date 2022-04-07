@@ -94,8 +94,10 @@ public:
 
     void Push(const T& i){
         std::unique_lock<std::mutex> lock(m_mutex);
+        std::cout << "Pushed" << std::endl;
         m_queue.push(i);
         m_cond.notify_one();
+        std::cout << m_queue.size() << std::endl;
     };
 
     Queue() = default;
@@ -110,6 +112,7 @@ private:
     std::mutex m_mutex;
 public:
     void ForEach(std::function<void(T)> f){
+        std::cout << "Looping through " << m_list.size() << " items" << std::endl;
         std::unique_lock<std::mutex> lock(m_mutex);
         std::for_each(m_list.begin(), m_list.end(), f);
     };
@@ -128,13 +131,13 @@ public:
 class Reciever{
 private:
     std::shared_ptr<sf::TcpSocket> r_socket;
-    Queue<ClientData>& r_queue;
+    Queue<std::pair<ClientData, bool>>& r_queue;
 public:
-    Reciever(std::shared_ptr<sf::TcpSocket>& s, Queue<ClientData>& q);
+    Reciever(std::shared_ptr<sf::TcpSocket>& s, Queue<std::pair<ClientData, bool>>& q);
     void ReceiverLoop();
 };
 
-Reciever::Reciever(std::shared_ptr<sf::TcpSocket>& s, Queue<ClientData>& q) : r_socket(s), r_queue(q){
+Reciever::Reciever(std::shared_ptr<sf::TcpSocket>& s, Queue<std::pair<ClientData, bool>>& q) : r_socket(s), r_queue(q){
     //r_socket = s;
     //r_queue = q;
 }
@@ -160,7 +163,18 @@ void Reciever::ReceiverLoop(){
         }
 
         if (packet >> name >> points >> input >> message){
-            std::cout << "Reciever Loop Recieved:\n" << name << "\n" << points << "\n" << input << "\n" << message << std::endl;
+            //std::cout << "Reciever Loop Recieved:\n" << name << "\n" << points << "\n" << input << "\n" << message << std::endl;
+        }
+
+        bool isP1 = false;
+
+        if (r_socket->getRemoteAddress() == _p1Address){
+            std::cout << "Recieved from player one" << std::endl;
+            isP1 = true;
+        }
+        else if (r_socket->getRemoteAddress() == _p2Address){
+            std::cout << "Recieved from player two" << std::endl;
+            isP1 = false;
         }
 
         ClientData d;
@@ -169,21 +183,25 @@ void Reciever::ReceiverLoop(){
         d.c_input = input;
         d.c_message = message;
 
-        r_queue.Push(d);
+        std::pair<ClientData, bool> p;
+        p.first = d;
+        p.second = isP1;
+
+        r_queue.Push(p);
     }
 }
 
 class Accepter{
 private:
     List<std::shared_ptr<sf::TcpSocket>>& a_socket;
-    Queue<ClientData>& a_queue;
+    Queue<std::pair<ClientData, bool>>& a_queue;
 public:
-    Accepter(List<std::shared_ptr<sf::TcpSocket>>& s, Queue<ClientData>& q);
+    Accepter(List<std::shared_ptr<sf::TcpSocket>>& s, Queue<std::pair<ClientData, bool>>& q);
     void operator()();
     //void AcceptLoop();
 };
 
-Accepter::Accepter(List<std::shared_ptr<sf::TcpSocket>>& s, Queue<ClientData>& q) : a_socket(s), a_queue(q){ }
+Accepter::Accepter(List<std::shared_ptr<sf::TcpSocket>>& s, Queue<std::pair<ClientData, bool>>& q) : a_socket(s), a_queue(q){ }
 
 void Accepter::operator()(){
     sf::TcpListener listener;
@@ -250,7 +268,7 @@ void Accepter::operator()(){
 
 
 
-sf::IpAddress HandleUDPBroadcast(){
+sf::IpAddress HandleUDPBroadcast(int s){
     sf::UdpSocket socket;
     sf::UdpSocket senderSocket;
 
@@ -279,14 +297,14 @@ sf::IpAddress HandleUDPBroadcast(){
         //return 1;
     }
 
-    char newData[100] = "Hello ther client. Here are the details of me";
+    //char newData[100] = s;
 
-    if (senderSocket.send(newData, 100, remoteIP, 55572) != sf::Socket::Done){
+    if (senderSocket.send(&s, 100, remoteIP, 55572) != sf::Socket::Done){
         std::cout << "Could not broadcast" << std::endl;
         return sf::IpAddress::None;
     }
     else{
-        std::cout << "Sent" << std::endl;
+        std::cout << "Sent seed " << s << std::endl;
     }
 
     //socket.close();
@@ -297,8 +315,10 @@ sf::IpAddress HandleUDPBroadcast(){
 
 int main(int argc, const char* argv[])
 {
+    std::srand(time(NULL));
+    
     std::cout << "I am a server" << std::endl;
-    Queue<ClientData> queue;
+    Queue<std::pair<ClientData, bool>> queue;
     List<std::shared_ptr<sf::TcpSocket>> sockets;
     //Accepter a(sockets, queue);
     std::thread(Accepter(sockets, queue)).detach();
@@ -306,14 +326,45 @@ int main(int argc, const char* argv[])
     //sf::CircleShape c(4);
     //c.getLocalBounds();
 
-    
+    int seed = std::rand() % 99999;
 
-    _p1Address = HandleUDPBroadcast();
-    _p2Address = HandleUDPBroadcast();
+    _p1Address = HandleUDPBroadcast(seed);
+    _p2Address = HandleUDPBroadcast(seed);
 
     while (true){
-        ClientData next = queue.Pop();
+        std::cout << "Looping started" << std::endl;
+        std::pair<ClientData, bool> popped = queue.Pop();
+        std::cout << "Popped" << std::endl;
+        ClientData next = popped.first;
         std::cout << "Recieved: " << next.c_name << std::endl;
+
+        sf::Packet packet;
+        packet << next;
+
+        std::cout << "Sending message from " << next.c_name << std::endl;
+
+        if (popped.second == true){
+            if (_connector2.send(packet) != sf::Socket::Done){
+                std::cerr << "Failed to send data to client" << std::endl;
+                return 1;
+            }
+            else{
+                std::cout << "Sent: " << next.c_name << std::endl;
+                std::cout << "Player Two" << std::endl;
+            }
+        }
+        else{
+            if (_connector.send(packet) != sf::Socket::Done){
+                std::cerr << "Failed to send data to client" << std::endl;
+                return 1;
+            }
+            else{
+                std::cout << "Sent: " << next.c_name << std::endl;
+                std::cout << "Player One" << std::endl;
+            }
+        }
+
+        /*
         auto send = [&] (std::shared_ptr<sf::TcpSocket> socket){
             //if (socket->connect("152.105.67.105", 55562)){
             //    std::cout << "Connected to client" << std::endl;
@@ -321,26 +372,36 @@ int main(int argc, const char* argv[])
 
             sf::Packet packet;
             packet << next;
-            
-            if (_connector.send(packet) != sf::Socket::Done){
-                std::cerr << "Failed to send data to client" << std::endl;
-                return 1;
-            }
-            else{
-                std::cout << "Sent: " << next.c_name << std::endl;
-            }
 
-            if (_connector2.send(packet) != sf::Socket::Done){
-                std::cerr << "Failed to send data to client" << std::endl;
-                return 1;
+            std::cout << "Sending message from " << next.c_name << std::endl;
+
+            if (popped.second == true){
+                if (_connector2.send(packet) != sf::Socket::Done){
+                    std::cerr << "Failed to send data to client" << std::endl;
+                    return 1;
+                }
+                else{
+                    std::cout << "Sent: " << next.c_name << std::endl;
+                    std::cout << "Player Two" << std::endl;
+                }
             }
             else{
-                std::cout << "Sent: " << next.c_name << std::endl;
+                if (_connector.send(packet) != sf::Socket::Done){
+                    std::cerr << "Failed to send data to client" << std::endl;
+                    return 1;
+                }
+                else{
+                    std::cout << "Sent: " << next.c_name << std::endl;
+                    std::cout << "Player One" << std::endl;
+                }
             }
+            
             return 0;
         };
+        */
+        
 
-        sockets.ForEach(send);
+        //sockets.ForEach(send);
     }
 
     return 0;
