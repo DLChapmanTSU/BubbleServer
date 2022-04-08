@@ -326,7 +326,15 @@ int main(int argc, const char* argv[])
     //sf::CircleShape c(4);
     //c.getLocalBounds();
 
-    int seed = std::rand() % 99999;
+    
+    int seed = std::rand() % 10;
+    std::srand(seed);
+
+    for (size_t i = 0; i < 5; i++)
+    {
+        std::cout << std::rand() % 5 << std::endl;
+    }
+    
 
     _p1Address = HandleUDPBroadcast(seed);
     _p2Address = HandleUDPBroadcast(seed);
