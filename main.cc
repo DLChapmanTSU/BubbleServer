@@ -327,7 +327,7 @@ int main(int argc, const char* argv[])
     //c.getLocalBounds();
 
     
-    int seed = std::rand() % 10;
+    int seed = (std::rand() % 133) + 1;
     std::srand(seed);
 
     for (size_t i = 0; i < 5; i++)
