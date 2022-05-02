@@ -52,16 +52,32 @@ struct ClientData{
     int c_points;
     u_int8_t c_input;
     std::string c_message;
+    float c_rotation;
 };
 
 sf::Packet& operator >>(sf::Packet& packet, ClientData& player)
 {
-    return packet >> player.c_name >> player.c_points >> player.c_input >> player.c_message;
+    return packet >> player.c_name >> player.c_points >> player.c_input >> player.c_message >> player.c_rotation;
 }
 
 sf::Packet& operator <<(sf::Packet& packet, const ClientData& player)
 {
-    return packet << player.c_name << player.c_points << player.c_input << player.c_message;
+    return packet << player.c_name << player.c_points << player.c_input << player.c_message << player.c_rotation;
+}
+
+struct ConnectionData{
+    int c_seed;
+    bool c_isPlayerOne;
+};
+
+sf::Packet& operator >>(sf::Packet& packet, ConnectionData& c)
+{
+    return packet >> c.c_seed >> c.c_isPlayerOne;
+}
+
+sf::Packet& operator <<(sf::Packet& packet, const ConnectionData& c)
+{
+    return packet << c.c_seed << c.c_isPlayerOne;
 }
 
 //Queue class
@@ -149,6 +165,7 @@ void Reciever::ReceiverLoop(){
     int points;
     u_int8_t input;
     std::string message;
+    float rotation;
 
     while (true){
         std::memset(buffer, 0, 256);
@@ -162,7 +179,7 @@ void Reciever::ReceiverLoop(){
             std::cout << "Reciever Loop Recieved " << buffer << std::endl;
         }
 
-        if (packet >> name >> points >> input >> message){
+        if (packet >> name >> points >> input >> message >> rotation){
             //std::cout << "Reciever Loop Recieved:\n" << name << "\n" << points << "\n" << input << "\n" << message << std::endl;
         }
 
@@ -182,6 +199,8 @@ void Reciever::ReceiverLoop(){
         d.c_points = points;
         d.c_input = input;
         d.c_message = message;
+        d.c_rotation = rotation;
+        
 
         std::pair<ClientData, bool> p;
         p.first = d;
@@ -189,6 +208,9 @@ void Reciever::ReceiverLoop(){
 
         r_queue.Push(p);
     }
+
+    //r_socket->disconnect();
+    //r_socket->close();
 }
 
 class Accepter{
@@ -242,6 +264,8 @@ void Accepter::operator()(){
             }
         }
     }
+
+    listener.close();
 }
 
 //void Accepter::AcceptLoop(){
@@ -265,10 +289,13 @@ void Accepter::operator()(){
 //}
 
 
+struct Room{
+    bool r_p1Ready{ false };
+    bool r_p2Ready{ false };
+};
 
 
-
-sf::IpAddress HandleUDPBroadcast(int s){
+sf::IpAddress HandleUDPBroadcast(int s1, int s2, bool p){
     sf::UdpSocket socket;
     sf::UdpSocket senderSocket;
 
@@ -288,24 +315,53 @@ sf::IpAddress HandleUDPBroadcast(int s){
     sf::IpAddress remoteIP;
     unsigned short remotePort;
 
+    std::cout << "Waiting for udp broadcast" << std::endl;
+
     if (socket.receive(data, 100, received, remoteIP, remotePort) != sf::Socket::Done){
         std::cout << "Failed to recieve" << std::endl;
         return sf::IpAddress::None;
     }
     else{
-        std::cout << "Recieved: " << data << " from broadcast" << std::endl;
+        std::cout << "Recieved: " << data << " from broadcast at " << remoteIP << " :: " << remotePort << std::endl;
         //return 1;
     }
 
-    //char newData[100] = s;
+    sf::Packet packet;
+    ConnectionData cData;
+    cData.c_isPlayerOne = p;
+    cData.c_seed = s1;
 
-    if (senderSocket.send(&s, 100, remoteIP, 55572) != sf::Socket::Done){
+    packet << cData;
+
+    int newData = s1;
+    int newData2 = s2;
+
+    if (senderSocket.send(&newData, 100, remoteIP, 55572) != sf::Socket::Done){
         std::cout << "Could not broadcast" << std::endl;
         return sf::IpAddress::None;
     }
     else{
-        std::cout << "Sent seed " << s << std::endl;
+        std::cout << "Sent seed " << s1 << std::endl;
     }
+
+    if (senderSocket.send(&newData2, 100, remoteIP, 55572) != sf::Socket::Done){
+        std::cout << "Could not broadcast" << std::endl;
+        return sf::IpAddress::None;
+    }
+    else{
+        std::cout << "Sent seed " << s2 << std::endl;
+    }
+
+    bool playerNumberData = p;
+
+    if (senderSocket.send(&playerNumberData, 100, remoteIP, 55572) != sf::Socket::Done){
+        std::cout << "Could not broadcast" << std::endl;
+        return sf::IpAddress::None;
+    }
+    else{
+        std::cout << "Sent seed Is P1: " << p << std::endl;
+    }
+
 
     //socket.close();
     //senderSocket.close();
@@ -318,6 +374,7 @@ int main(int argc, const char* argv[])
     std::srand(time(NULL));
     
     std::cout << "I am a server" << std::endl;
+    std::cout << sf::IpAddress::getLocalAddress() << std::endl;
     Queue<std::pair<ClientData, bool>> queue;
     List<std::shared_ptr<sf::TcpSocket>> sockets;
     //Accepter a(sockets, queue);
@@ -327,8 +384,9 @@ int main(int argc, const char* argv[])
     //c.getLocalBounds();
 
     
-    int seed = (std::rand() % 133) + 1;
-    std::srand(seed);
+    int seed1 = (std::rand() % 64) + 1;
+    int seed2 = (std::rand() % 64) + 1;
+    std::srand(seed1);
 
     for (size_t i = 0; i < 5; i++)
     {
@@ -336,15 +394,122 @@ int main(int argc, const char* argv[])
     }
     
 
-    _p1Address = HandleUDPBroadcast(seed);
-    _p2Address = HandleUDPBroadcast(seed);
+    _p1Address = HandleUDPBroadcast(seed1, seed2, true);
+    _p2Address = HandleUDPBroadcast(seed1, seed2, false);
+
+    
+
+    bool bothConnected{ false };
+    bool gameStarted{ false };
+    Room gameRoom;
+
 
     while (true){
+
+        if (bothConnected == false){
+            if (_connector.getRemoteAddress() != sf::IpAddress::None && _connector2.getRemoteAddress() != sf::IpAddress::None){
+                //All UDP pings in the above function are blocking
+                //Send out a TCP ping to each player to tell them to start the simulation
+                //The recievers on the client side should be blocking
+                ClientData startData;
+                startData.c_input = 10;
+                startData.c_message = "Lobby Full";
+                startData.c_name = "Server";
+                startData.c_points = 0;
+
+                sf::Packet startPacket;
+                startPacket << startData;
+
+                std::cout << "Sending start to: " << _connector.getRemoteAddress() << std::endl;
+                std::cout << "Should connect to: " << _p1Address << std::endl;
+                if (_connector.send(startPacket) != sf::Socket::Done){
+                    std::cerr << "Failed to send data to client" << std::endl;
+                    return 1;
+                }
+                else{
+                    std::cout << "Sent: Start Notification" << std::endl;
+                    std::cout << "Player One" << std::endl;
+                }
+
+                std::cout << "Sending start to: " << _connector2.getRemoteAddress() << std::endl;
+                std::cout << "Should connect to: " << _p2Address << std::endl;
+
+                //_connector2.connect(_p2Address, 55562);
+
+                if (_connector2.send(startPacket) != sf::Socket::Done){
+                    std::cerr << "Failed to send data to client" << std::endl;
+                    return 1;
+                }
+                else{
+                    std::cout << "Sent: Start Notification" << std::endl;
+                    std::cout << "Player Two" << std::endl;
+                }
+
+                bothConnected = true;
+            }
+            continue;
+        }
+
+        if (gameRoom.r_p1Ready == true && gameRoom.r_p2Ready == true && gameStarted == false){
+            ClientData readyData;
+            readyData.c_message = "Start";
+            readyData.c_input = 0;
+            readyData.c_name = "Server";
+            readyData.c_points = 0;
+            readyData.c_rotation = 0;
+            sf::Packet readyPacket;
+            readyPacket << readyData;
+            gameStarted = true;
+            std::cout << "Game Starting" << std::endl;
+
+            if (_connector.send(readyPacket) != sf::Socket::Done){
+                std::cerr << "Failed to send data to client" << std::endl;
+                return 1;
+            }
+            else{
+                std::cout << "Sent: " << readyData.c_message << std::endl;
+                std::cout << "Player One" << std::endl;
+            }
+
+            if (_connector2.send(readyPacket) != sf::Socket::Done){
+                std::cerr << "Failed to send data to client" << std::endl;
+                return 1;
+            }
+            else{
+                std::cout << "Sent: " << readyData.c_message << std::endl;
+                std::cout << "Player One" << std::endl;
+            }
+
+            continue;
+        }
+
         std::cout << "Looping started" << std::endl;
         std::pair<ClientData, bool> popped = queue.Pop();
         std::cout << "Popped" << std::endl;
         ClientData next = popped.first;
         std::cout << "Recieved: " << next.c_name << std::endl;
+
+        
+
+        if (gameRoom.r_p1Ready == false || gameRoom.r_p2Ready == false){
+            std::cout << "Waiting for ready up" << std::endl;
+            if (popped.second == true){
+                if (next.c_message == "Ready"){
+                    gameRoom.r_p1Ready = true;
+                    std::cout << "p1 ready" << std::endl;
+                }
+            }
+            else{
+                if (next.c_message == "Ready"){
+                    gameRoom.r_p2Ready = true;
+                    std::cout << "p2 ready" << std::endl;
+                }
+            }
+
+            std::cout << "Continue" << std::endl;
+
+            continue;
+        }
 
         sf::Packet packet;
         packet << next;
