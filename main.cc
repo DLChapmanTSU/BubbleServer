@@ -243,24 +243,24 @@ void Accepter::operator()(){
             if (_connector.getRemoteAddress() == sf::IpAddress::None){
                 std::cout << "Player 1 Connected" << std::endl;
                 _p1Address = socket->getRemoteAddress();
-                _p1Port = socket->getRemotePort();
+                //_p1Port = socket->getRemotePort();
                 std::cout << _p1Address << std::endl;
                 std::cout << _p1Port << std::endl;
                 a_socket.Push(socket);
                 std::shared_ptr<Reciever> r = std::make_shared<Reciever>(socket, a_queue);
                 std::thread(&Reciever::ReceiverLoop, r).detach();
-                _connector.connect(_p1Address, 55562);
+                _connector.connect(_p1Address, _p1Port);
             }
             else if (_connector2.getRemoteAddress() == sf::IpAddress::None){
                 std::cout << "Player 2 Connected" << std::endl;
                 _p2Address = socket->getRemoteAddress();
-                _p2Port = socket->getRemotePort();
+                //_p2Port = socket->getRemotePort();
                 std::cout << _p2Address << std::endl;
                 std::cout << _p2Port << std::endl;
                 a_socket.Push(socket);
                 std::shared_ptr<Reciever> r = std::make_shared<Reciever>(socket, a_queue);
                 std::thread(&Reciever::ReceiverLoop, r).detach();
-                _connector2.connect(_p2Address, 55562);
+                _connector2.connect(_p2Address, _p2Port);
             }
         }
     }
@@ -296,8 +296,9 @@ struct Room{
 
 
 sf::IpAddress HandleUDPBroadcast(int s1, int s2, bool p){
+    std::cout << "Starting UDP" << std::endl;
     sf::UdpSocket socket;
-    sf::UdpSocket senderSocket;
+    // sf::UdpSocket senderSocket;
 
     // bind the socket to a port
     if (socket.bind(55571) != sf::Socket::Done)
@@ -305,19 +306,19 @@ sf::IpAddress HandleUDPBroadcast(int s1, int s2, bool p){
         return sf::IpAddress::None;
     }
 
-    if (senderSocket.bind(55573) != sf::Socket::Done)
-    {
-        return sf::IpAddress::None;
-    }
+    // if (senderSocket.bind(55573) != sf::Socket::Done)
+    // {
+    //     return sf::IpAddress::None;
+    // }
 
-    char data[100];
+    unsigned short data;
     size_t received;
     sf::IpAddress remoteIP;
     unsigned short remotePort;
 
     std::cout << "Waiting for udp broadcast" << std::endl;
 
-    if (socket.receive(data, 100, received, remoteIP, remotePort) != sf::Socket::Done){
+    if (socket.receive(&data, 100, received, remoteIP, remotePort) != sf::Socket::Done){
         std::cout << "Failed to recieve" << std::endl;
         return sf::IpAddress::None;
     }
@@ -336,7 +337,7 @@ sf::IpAddress HandleUDPBroadcast(int s1, int s2, bool p){
     int newData = s1;
     int newData2 = s2;
 
-    if (senderSocket.send(&newData, 100, remoteIP, 55572) != sf::Socket::Done){
+    if (socket.send(&newData, 100, remoteIP, 55572) != sf::Socket::Done){
         std::cout << "Could not broadcast" << std::endl;
         return sf::IpAddress::None;
     }
@@ -344,7 +345,7 @@ sf::IpAddress HandleUDPBroadcast(int s1, int s2, bool p){
         std::cout << "Sent seed " << s1 << std::endl;
     }
 
-    if (senderSocket.send(&newData2, 100, remoteIP, 55572) != sf::Socket::Done){
+    if (socket.send(&newData2, 100, remoteIP, 55572) != sf::Socket::Done){
         std::cout << "Could not broadcast" << std::endl;
         return sf::IpAddress::None;
     }
@@ -354,7 +355,7 @@ sf::IpAddress HandleUDPBroadcast(int s1, int s2, bool p){
 
     bool playerNumberData = p;
 
-    if (senderSocket.send(&playerNumberData, 100, remoteIP, 55572) != sf::Socket::Done){
+    if (socket.send(&playerNumberData, 100, remoteIP, 55572) != sf::Socket::Done){
         std::cout << "Could not broadcast" << std::endl;
         return sf::IpAddress::None;
     }
@@ -365,7 +366,7 @@ sf::IpAddress HandleUDPBroadcast(int s1, int s2, bool p){
 
     //socket.close();
     //senderSocket.close();
-
+    
     return remoteIP;
 }
 
@@ -384,8 +385,8 @@ int main(int argc, const char* argv[])
     //c.getLocalBounds();
 
     
-    int seed1 = (std::rand() % 64) + 1;
-    int seed2 = (std::rand() % 64) + 1;
+    int seed1 = (std::rand() % 16) + 1;
+    int seed2 = (std::rand() % 16) + 1;
     std::srand(seed1);
 
     for (size_t i = 0; i < 5; i++)
@@ -395,6 +396,7 @@ int main(int argc, const char* argv[])
     
 
     _p1Address = HandleUDPBroadcast(seed1, seed2, true);
+    std::cout << "hi" << std::endl;
     _p2Address = HandleUDPBroadcast(seed1, seed2, false);
 
     
